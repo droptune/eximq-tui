@@ -24,8 +24,8 @@ DELIVER_KEY = (ord('d'), ord('D'))
 DELETE_KEY = (ord('x'), ord('X'))
 VIEW_LOG_KEY = (ord('g'), ord('G'))
 REFRESH_KEY = (ord('R'), ord('r'), curses.KEY_F5)
-HOME_KEY = (curses.KEY_HOME,)
-END_KEY = (curses.KEY_END,)
+HOME_KEY = (curses.KEY_HOME, )
+END_KEY = (curses.KEY_END, )
 MULTIPLE_SELECT_KEY = (32)
 EXIT_KEY = (27, ord('q'), ord('Q'))
 
@@ -72,7 +72,6 @@ class CursesScreen:
         self.box.erase()
         self.screen.border(0)
         self.box.border(0)
-
 
     def redraw(self):
         self.erase()
@@ -149,12 +148,13 @@ def get_content(exim_q, mode, cur_screen):
         if mode == 'content':
             content = subprocess.check_output("exim -Mvc {0}".format(msg_id), shell=True).decode('utf-8').splitlines()
             current_message = exim_q.selected_message
-            header = "** Message {0} {4} from <{1}> to {2}, {3} ago. **".format(exim_q.queue[current_message]['id'],
-                                                                          exim_q.queue[current_message]['from'],
-                                                                          exim_q.queue[current_message]['mailto'],
-                                                                          exim_q.queue[current_message]['time'],
-                                                                          exim_q.queue[current_message]['status'],
-                                                                          )
+            header = "** Message {0} {4} from <{1}> to {2}, {3} ago. **".format(
+                exim_q.queue[current_message]['id'],
+                exim_q.queue[current_message]['from'],
+                exim_q.queue[current_message]['mailto'],
+                exim_q.queue[current_message]['time'],
+                exim_q.queue[current_message]['status'],
+            )
             content.insert(0, header)
             return content
         if mode == 'log':
@@ -254,12 +254,13 @@ def display_queue(cur_screen, exim_q):
         if exim_q.total_messages == 0:
             cur_screen.box_string("No messages in queue.", 2)
         else:
-            line = str(message_line_number + 1) + " {0} {4} from <{1}> to {2}, {3} ago.".format(exim_q.queue[message_line_number]['id'],
-                                                                          exim_q.queue[message_line_number]['from'],
-                                                                          exim_q.queue[message_line_number]['mailto'],
-                                                                          exim_q.queue[message_line_number]['time'],
-                                                                          exim_q.queue[message_line_number]['status'],
-                                                                          )
+            line = str(message_line_number + 1) + " {0} {4} from <{1}> to {2}, {3} ago.".format(
+                exim_q.queue[message_line_number]['id'],
+                exim_q.queue[message_line_number]['from'],
+                exim_q.queue[message_line_number]['mailto'],
+                exim_q.queue[message_line_number]['time'],
+                exim_q.queue[message_line_number]['status'],
+            )
             if exim_q.column_shift >= len(line):
                 exim_q.column_shift = len(line) - 1
             max_col = cur_screen.MAX_BOX_COLS + exim_q.column_shift
@@ -342,4 +343,3 @@ def main(screen):
 
 if __name__ == "__main__":
     wrapper(main)
-
