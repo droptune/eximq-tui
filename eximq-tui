@@ -202,6 +202,10 @@ def contents_screen(cur_screen, exim_q, mode):
             content = get_content(exim_q, mode, cur_screen)
         elif key in REFRESH_KEY:
             content = get_content(exim_q, mode, cur_screen)
+        if key == curses.KEY_RESIZE:
+            cur_screen.redraw()
+            display_help(cur_screen)
+            cur_screen.refresh()
         else:
             key = cur_screen.screen.getch()
             continue
