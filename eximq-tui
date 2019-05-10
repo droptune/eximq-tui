@@ -70,6 +70,18 @@ class CursesScreen:
         self.screen.border(0)
         self.box.border(0)
 
+
+    def redraw(self):
+        self.erase()
+        self.refresh()
+        self.screen.border(0)
+        curses.curs_set(0)
+        max_rows, max_cols = self.screen.getmaxyx()
+        self.MAX_BOX_ROW = max_rows - 10
+        self.MAX_BOX_COLS = max_cols - 6
+        self.box = curses.newwin(self.MAX_BOX_ROW + 2, self.MAX_BOX_COLS + 4, 1, 1)
+        self.box.box()
+
     def box_string(self, text, x, color=None, y=None):
         if y is None:
             y = self.current_line
@@ -260,7 +272,10 @@ def main(screen):
     while key not in EXIT_KEY:
         # extract 1, because of the border line
         current_line = exim_q.selected_message - exim_q.top_line - 1
-        if key in ENTER_KEY:
+        if key == curses.KEY_RESIZE:
+            cur_screen.redraw()
+            display_help(cur_screen)
+        elif key in ENTER_KEY:
             contents_screen(cur_screen, exim_q, 'content')
         elif (key in DOWN_KEY) and not (exim_q.selected_message >= exim_q.total_messages):
             exim_q.selected_message += 1
@@ -295,4 +310,4 @@ def main(screen):
 
 if __name__ == "__main__":
     wrapper(main)
-    # main(sys.argv[1:])
+
