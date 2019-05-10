@@ -232,7 +232,7 @@ def delete_message(cur_screen, exim_q):
     cur_screen.box_string("Deleting message {0}...".format(msg_id), 2)
     cur_screen.box_string("...", 2)
     cur_screen.box_refresh()
-    subprocess.run(["exim", "-Mrm", msg_id])
+    subprocess.call(["exim", "-Mrm", msg_id])
     exim_q.read_queue()
     cur_screen.screen.getch()
 
@@ -243,7 +243,7 @@ def deliver_message(cur_screen, exim_q):
     cur_screen.box_string("Attempting to deliver message {0}...".format(msg_id), 2)
     cur_screen.box_string("...", 2)
     cur_screen.box_refresh()
-    subprocess.run(["exim", "-M", msg_id])
+    subprocess.call(["exim", "-M", msg_id])
     exim_q.read_queue()
     cur_screen.screen.getch()
 
