@@ -30,6 +30,7 @@ MULTIPLE_SELECT_KEY = (32)
 EXIT_KEY = (27, ord('q'), ord('Q'))
 
 re_msg_info = re.compile(r"\s*(\S+)\s+(.+)\s+(.+)\s+<(.*)>")
+re_frozen_check = re.compile(r"\*\*\* frozen \*\*\*")
 re_receipient = re.compile(r"^\s+(\S+)\s*$")
 
 
@@ -119,6 +120,10 @@ class EximQueue:
                         'id': line_result.group(3),
                         'from': line_result.group(4)
                     }
+                    if re_frozen_check.search(line):
+                        current_message['status'] = '*frozen*'
+                    else:
+                        current_message['status'] = ''
                     continue
                 else:
                     line_result = re_receipient.match(line)
@@ -142,7 +147,16 @@ def get_content(exim_q, mode, cur_screen):
     msg_id = exim_q.get_selected_msg_id()
     try:
         if mode == 'content':
-            return subprocess.check_output("exim -Mvc {0}".format(msg_id), shell=True).decode('utf-8').splitlines()
+            content = subprocess.check_output("exim -Mvc {0}".format(msg_id), shell=True).decode('utf-8').splitlines()
+            current_message = exim_q.selected_message
+            header = "** Message {0} {4} from <{1}> to {2}, {3} ago. **".format(exim_q.queue[current_message]['id'],
+                                                                          exim_q.queue[current_message]['from'],
+                                                                          exim_q.queue[current_message]['mailto'],
+                                                                          exim_q.queue[current_message]['time'],
+                                                                          exim_q.queue[current_message]['status'],
+                                                                          )
+            content.insert(0, header)
+            return content
         if mode == 'log':
             return subprocess.check_output("grep -w {0} {1}".format(msg_id, EXIM_LOG), shell=True).decode('utf-8')\
                 .splitlines()
@@ -158,7 +172,7 @@ def contents_screen(cur_screen, exim_q, mode):
     content = get_content(exim_q, mode, cur_screen)
     max_line_len = len(max(content, key=len))
 
-    display_content(content, cur_screen, top_line, col_shift)
+    display_content(content, cur_screen, top_line, col_shift, exim_q)
 
     key = cur_screen.screen.getch()
     while key not in EXIT_KEY:
@@ -193,11 +207,11 @@ def contents_screen(cur_screen, exim_q, mode):
             continue
 
         if content is not None:
-            display_content(content, cur_screen, top_line, col_shift)
+            display_content(content, cur_screen, top_line, col_shift, exim_q)
         key = cur_screen.screen.getch()
 
 
-def display_content(content, cur_screen, top_line, col_shift):
+def display_content(content, cur_screen, top_line, col_shift, exim_q):
     cur_screen.clear_box()
     max_row = cur_screen.MAX_BOX_ROW + top_line
     max_col = cur_screen.MAX_BOX_COLS + col_shift
@@ -236,10 +250,11 @@ def display_queue(cur_screen, exim_q):
         if exim_q.total_messages == 0:
             cur_screen.box_string("No messages in queue.", 2)
         else:
-            line = str(message_line_number + 1) + " {0} from <{1}> to {2}, {3} ago.".format(exim_q.queue[message_line_number]['id'],
+            line = str(message_line_number + 1) + " {0} {4} from <{1}> to {2}, {3} ago.".format(exim_q.queue[message_line_number]['id'],
                                                                           exim_q.queue[message_line_number]['from'],
                                                                           exim_q.queue[message_line_number]['mailto'],
                                                                           exim_q.queue[message_line_number]['time'],
+                                                                          exim_q.queue[message_line_number]['status'],
                                                                           )
             if exim_q.column_shift >= len(line):
                 exim_q.column_shift = len(line) - 1
