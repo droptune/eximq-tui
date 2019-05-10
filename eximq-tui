@@ -1,0 +1,280 @@
+#!/usr/bin/env python3
+
+import re
+import subprocess
+import sys
+import curses
+from curses import wrapper
+from platform import system
+
+EXIM_LOG = None
+
+# Try to guess exim log file location
+if EXIM_LOG is None:
+    if system() == 'Linux':
+        EXIM_LOG = "/var/log/exim/main.log"
+
+# You may redefine controls here
+ENTER_KEY = (curses.KEY_ENTER, 10, 13, ord('m'), ord('M'))
+UP_KEY = (curses.KEY_UP, ord('k'), ord('K'))
+DOWN_KEY = (curses.KEY_DOWN, ord('j'), ord('J'))
+LEFT_KEY = (curses.KEY_LEFT, ord('h'), ord('H'))
+RIGHT_KEY = (curses.KEY_RIGHT, ord('l'), ord('L'))
+DELETE_KEY = (ord('d'), ord('D'))
+VIEW_LOG_KEY = (ord('g'), ord('G'))
+REFRESH_KEY = (ord('R'), ord('r'), curses.KEY_F5)
+MULTIPLE_SELECT_KEY = (32)
+EXIT_KEY = (27, ord('q'), ord('Q'))
+
+re_msg_info = re.compile(r"\s*(\S+)\s+(.+)\s+(.+)\s+<(.*)>")
+re_receipient = re.compile(r"^\s+(\S+)\s*$")
+
+
+class CursesScreen:
+    """Curses class"""
+    current_line = 1
+
+    def __init__(self, screen):
+        self.screen = screen
+
+        curses.init_pair(1, curses.COLOR_BLACK, curses.COLOR_CYAN)
+        self.highlight_text = curses.color_pair(1)
+        self.normal_text = curses.A_NORMAL
+
+        self.screen.border(0)
+        curses.curs_set(0)
+        max_rows, max_cols = self.screen.getmaxyx()
+        self.MAX_BOX_ROW = max_rows - 10
+        self.MAX_BOX_COLS = max_cols - 6
+
+        self.box = curses.newwin(self.MAX_BOX_ROW + 2, self.MAX_BOX_COLS + 4, 1, 1)
+        self.box.box()
+
+    def box_refresh(self):
+        self.box.refresh()
+
+    def refresh(self):
+        self.screen.refresh()
+        self.box.refresh()
+
+    def clear_box(self):
+        self.current_line = 1
+        self.box.erase()
+        self.box.box()
+        self.box.border(0)
+
+    def erase(self):
+        self.current_line = 1
+        self.box.erase()
+        self.screen.border(0)
+        self.box.border(0)
+
+    def box_string(self, text, x, color=None, y=None):
+        if y is None:
+            y = self.current_line
+        if color is None:
+            color = self.normal_text
+        self.box.addstr(y, x, text, color)
+        self.current_line = self.current_line + 1
+
+
+class EximQueue:
+    column_shift = 0
+    top_line = 0
+    selected_message = 0
+    total_messages = 0
+    queue = []
+
+    def __init__(self):
+        self.read_queue()
+
+    def read_queue(self):
+        queue = []
+        current_message = {}
+
+        exim_queue = subprocess.check_output("exim -bp", encoding="utf-8", shell=True).splitlines()
+
+        for line in exim_queue:
+            if line != '':
+                line_result = re_msg_info.match(line)
+                if line_result:
+                    current_message = {
+                        'time': line_result.group(1),
+                        'size': line_result.group(2),
+                        'id': line_result.group(3),
+                        'from': line_result.group(4)
+                    }
+                    continue
+                else:
+                    line_result = re_receipient.match(line)
+                    if line_result:
+                        current_message['mailto'] = line_result.group(1)
+                        queue.append(current_message)
+
+        self.queue = queue
+        self.total_messages = len(queue) - 1
+        self.selected_message = 0
+        self.top_line = 0
+
+    def get_selected_msg_id(self):
+        return self.queue[self.selected_message]['id']
+
+
+def get_content(exim_q, mode, cur_screen):
+    cur_screen.clear_box()
+    cur_screen.box_string("",2,None,2)
+    cur_screen.box_refresh()
+    msg_id = exim_q.get_selected_msg_id()
+    try:
+        if mode == 'content':
+            return subprocess.check_output("exim -Mvc {0}".format(msg_id), encoding="utf-8", shell=True).splitlines()
+        if mode == 'log':
+            return subprocess.check_output("grep -w {0} {1}".format(msg_id, EXIM_LOG), encoding="utf-8", shell=True)\
+                .splitlines()
+    except:
+        return None
+
+
+def contents_screen(cur_screen, exim_q, mode):
+    max_col = cur_screen.MAX_BOX_COLS
+    top_line = 0
+    col_shift = 0
+
+    content = get_content(exim_q, mode, cur_screen)
+    max_line_len = len(max(content, key=len))
+
+    display_content(content, cur_screen, top_line, col_shift)
+
+    key = cur_screen.screen.getch()
+    while key not in EXIT_KEY:
+        if key in DELETE_KEY:
+            delete_message(cur_screen, exim_q)
+            break
+        elif key in RIGHT_KEY and max_line_len > max_col and (max_line_len - col_shift) > 2:
+            col_shift += 1
+        elif key in LEFT_KEY and col_shift > 0:
+            col_shift -= 1
+        elif key in UP_KEY and exim_q.selected_message > 0:
+            exim_q.selected_message -= 1
+            content = get_content(exim_q, mode, cur_screen)
+        elif key in DOWN_KEY and exim_q.selected_message < exim_q.total_messages:
+            exim_q.selected_message += 1
+            content = get_content(exim_q, mode, cur_screen)
+        elif key in VIEW_LOG_KEY and mode != 'log':
+            mode = 'log'
+            content = get_content(exim_q, mode, cur_screen)
+        elif key in ENTER_KEY and mode != 'content':
+            mode = 'content'
+            content = get_content(exim_q, mode, cur_screen)
+        elif key in REFRESH_KEY:
+            content = get_content(exim_q, mode, cur_screen)
+        else:
+            key = cur_screen.screen.getch()
+            continue
+
+        if content is not None:
+            display_content(content, cur_screen, top_line, col_shift)
+        key = cur_screen.screen.getch()
+
+
+def display_content(content, cur_screen, top_line, col_shift):
+    cur_screen.clear_box()
+    max_row = cur_screen.MAX_BOX_ROW + top_line
+    max_col = cur_screen.MAX_BOX_COLS + col_shift
+
+    for line in content[top_line:max_row]:
+        cur_screen.box_string(line[col_shift:max_col], 2)
+
+    cur_screen.box_refresh()
+
+
+def delete_message(cur_screen, exim_q):
+    msg_id = exim_q.get_selected_msg_id()
+    cur_screen.clear_box()
+    cur_screen.box_string("Deleting message {0}...".format(msg_id), 2)
+    cur_screen.box_string("...", 2)
+    cur_screen.box_refresh()
+    subprocess.run(["exim", "-Mrm", msg_id])
+    exim_q.read_queue()
+    cur_screen.screen.getch()
+
+
+def display_queue(cur_screen, exim_q):
+    for i in range(0, cur_screen.MAX_BOX_ROW):
+        if exim_q.total_messages == 0:
+            cur_screen.box_string("No messages in queue.", 2)
+        else:
+            line = str(i + 1) + " {0} from <{1}> to {2}, {3} ago.".format(exim_q.queue[i]['id'],
+                                                                          exim_q.queue[i]['from'],
+                                                                          exim_q.queue[i]['mailto'],
+                                                                          exim_q.queue[i]['time']
+                                                                          )
+            if exim_q.column_shift >= len(line):
+                exim_q.column_shift = len(line) - 1
+            max_col = cur_screen.MAX_BOX_COLS + exim_q.column_shift
+            if i == exim_q.selected_message:
+                cur_screen.box_string(line[exim_q.column_shift:max_col], 2, cur_screen.highlight_text)
+            else:
+                cur_screen.box_string(line[:cur_screen.MAX_BOX_COLS], 2)
+            if i == exim_q.total_messages:
+                break
+
+
+def display_help(cur_screen):
+    # Will be printed under the main box
+    max_box_row = cur_screen.MAX_BOX_ROW
+    cur_screen.screen.addstr(max_box_row + 3, 2, "ENTER or M - view message")
+    cur_screen.screen.addstr(max_box_row + 4, 2, "D - delete message")
+    cur_screen.screen.addstr(max_box_row + 5, 2, "G - grep exim log file for message ID")
+    cur_screen.screen.addstr(max_box_row + 6, 2, "R or F5 - refresh")
+    cur_screen.screen.addstr(max_box_row + 7, 2, "Q - exit")
+
+
+def main(screen):
+    exim_q = EximQueue()
+
+    cur_screen = CursesScreen(screen)
+
+    display_queue(cur_screen, exim_q)
+    display_help(cur_screen)
+    cur_screen.refresh()
+
+    # Enter main loop
+    key = screen.getch()
+    while key not in EXIT_KEY:
+        # extract 1, because of the border line
+        current_line = exim_q.selected_message - exim_q.top_line - 1
+        if key in ENTER_KEY:
+            contents_screen(cur_screen, exim_q, 'content')
+        elif (key in DOWN_KEY) and not (exim_q.selected_message >= exim_q.total_messages):
+            exim_q.selected_message += 1
+            exim_q.column_shift = 0
+            if current_line == cur_screen.MAX_BOX_ROW:
+                exim_q.top_line += 1
+        elif (key in UP_KEY) and not (exim_q.selected_message == 0):
+            exim_q.selected_message -= 1
+            exim_q.column_shift = 0
+            if current_line == 0:
+                exim_q.top_line -= 1
+        elif (key in LEFT_KEY) and exim_q.column_shift > 0:
+            exim_q.column_shift -= 1
+        elif key in RIGHT_KEY:
+            exim_q.column_shift += 1
+        elif key in REFRESH_KEY:
+            exim_q.read_queue()
+        elif key in DELETE_KEY:
+            delete_message(cur_screen, exim_q)
+        else:
+            key = screen.getch()
+            continue
+
+        cur_screen.clear_box()
+
+        display_queue(cur_screen, exim_q)
+        cur_screen.refresh()
+        key = screen.getch()
+
+
+if __name__ == "__main__":
+    wrapper(main)
+    # main(sys.argv[1:])
