@@ -20,7 +20,8 @@ UP_KEY = (curses.KEY_UP, ord('k'), ord('K'))
 DOWN_KEY = (curses.KEY_DOWN, ord('j'), ord('J'))
 LEFT_KEY = (curses.KEY_LEFT, ord('h'), ord('H'))
 RIGHT_KEY = (curses.KEY_RIGHT, ord('l'), ord('L'))
-DELETE_KEY = (ord('d'), ord('D'))
+DELIVER_KEY = (ord('d'), ord('D'))
+DELETE_KEY = (ord('x'), ord('X'))
 VIEW_LOG_KEY = (ord('g'), ord('G'))
 REFRESH_KEY = (ord('R'), ord('r'), curses.KEY_F5)
 MULTIPLE_SELECT_KEY = (32)
@@ -150,6 +151,9 @@ def contents_screen(cur_screen, exim_q, mode):
         if key in DELETE_KEY:
             delete_message(cur_screen, exim_q)
             break
+        elif key in DELIVER_KEY:
+            deliver_message(cur_screen, exim_q)
+            break
         elif key in RIGHT_KEY and max_line_len > max_col and (max_line_len - col_shift) > 2:
             col_shift += 1
         elif key in LEFT_KEY and col_shift > 0:
@@ -199,6 +203,17 @@ def delete_message(cur_screen, exim_q):
     cur_screen.screen.getch()
 
 
+def deliver_message(cur_screen, exim_q):
+    msg_id = exim_q.get_selected_msg_id()
+    cur_screen.clear_box()
+    cur_screen.box_string("Attempting to deliver message {0}...".format(msg_id), 2)
+    cur_screen.box_string("...", 2)
+    cur_screen.box_refresh()
+    subprocess.run(["exim", "-M", msg_id])
+    exim_q.read_queue()
+    cur_screen.screen.getch()
+
+
 def display_queue(cur_screen, exim_q):
     for i in range(0, cur_screen.MAX_BOX_ROW):
         if exim_q.total_messages == 0:
@@ -224,10 +239,11 @@ def display_help(cur_screen):
     # Will be printed under the main box
     max_box_row = cur_screen.MAX_BOX_ROW
     cur_screen.screen.addstr(max_box_row + 3, 2, "ENTER or M - view message")
-    cur_screen.screen.addstr(max_box_row + 4, 2, "D - delete message")
-    cur_screen.screen.addstr(max_box_row + 5, 2, "G - grep exim log file for message ID")
-    cur_screen.screen.addstr(max_box_row + 6, 2, "R or F5 - refresh")
-    cur_screen.screen.addstr(max_box_row + 7, 2, "Q - exit")
+    cur_screen.screen.addstr(max_box_row + 4, 2, "D - attempt to deliver message")
+    cur_screen.screen.addstr(max_box_row + 5, 2, "X - delete message")
+    cur_screen.screen.addstr(max_box_row + 6, 2, "G - grep exim log file for message ID")
+    cur_screen.screen.addstr(max_box_row + 7, 2, "R or F5 - refresh")
+    cur_screen.screen.addstr(max_box_row + 8, 2, "Q - exit")
 
 
 def main(screen):
@@ -264,6 +280,8 @@ def main(screen):
             exim_q.read_queue()
         elif key in DELETE_KEY:
             delete_message(cur_screen, exim_q)
+        elif key in DELIVER_KEY:
+            deliver_message(cur_screen, exim_q)
         else:
             key = screen.getch()
             continue
