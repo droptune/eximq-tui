@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 
 import re
 import subprocess
@@ -24,6 +24,8 @@ DELIVER_KEY = (ord('d'), ord('D'))
 DELETE_KEY = (ord('x'), ord('X'))
 VIEW_LOG_KEY = (ord('g'), ord('G'))
 REFRESH_KEY = (ord('R'), ord('r'), curses.KEY_F5)
+HOME_KEY = (curses.KEY_HOME,)
+END_KEY = (curses.KEY_END,)
 MULTIPLE_SELECT_KEY = (32)
 EXIT_KEY = (27, ord('q'), ord('Q'))
 
@@ -88,7 +90,7 @@ class CursesScreen:
         if color is None:
             color = self.normal_text
         self.box.addstr(y, x, text, color)
-        self.current_line = self.current_line + 1
+        self.current_line += 1
 
 
 class EximQueue:
@@ -105,7 +107,7 @@ class EximQueue:
         queue = []
         current_message = {}
 
-        exim_queue = subprocess.check_output("exim -bp", encoding="utf-8", shell=True).splitlines()
+        exim_queue = subprocess.check_output("exim -bpr", shell=True).decode('utf-8').splitlines()
 
         for line in exim_queue:
             if line != '':
@@ -135,14 +137,14 @@ class EximQueue:
 
 def get_content(exim_q, mode, cur_screen):
     cur_screen.clear_box()
-    cur_screen.box_string("",2,None,2)
+    cur_screen.box_string("", 2, None, 2)
     cur_screen.box_refresh()
     msg_id = exim_q.get_selected_msg_id()
     try:
         if mode == 'content':
-            return subprocess.check_output("exim -Mvc {0}".format(msg_id), encoding="utf-8", shell=True).splitlines()
+            return subprocess.check_output("exim -Mvc {0}".format(msg_id), shell=True).decode('utf-8').splitlines()
         if mode == 'log':
-            return subprocess.check_output("grep -w {0} {1}".format(msg_id, EXIM_LOG), encoding="utf-8", shell=True)\
+            return subprocess.check_output("grep -w {0} {1}".format(msg_id, EXIM_LOG), shell=True).decode('utf-8')\
                 .splitlines()
     except:
         return None
@@ -170,6 +172,8 @@ def contents_screen(cur_screen, exim_q, mode):
             col_shift += 1
         elif key in LEFT_KEY and col_shift > 0:
             col_shift -= 1
+        elif key in HOME_KEY:
+            col_shift = 0
         elif key in UP_KEY and exim_q.selected_message > 0:
             exim_q.selected_message -= 1
             content = get_content(exim_q, mode, cur_screen)
@@ -228,22 +232,23 @@ def deliver_message(cur_screen, exim_q):
 
 def display_queue(cur_screen, exim_q):
     for i in range(0, cur_screen.MAX_BOX_ROW):
+        message_line_number = i + exim_q.top_line
         if exim_q.total_messages == 0:
             cur_screen.box_string("No messages in queue.", 2)
         else:
-            line = str(i + 1) + " {0} from <{1}> to {2}, {3} ago.".format(exim_q.queue[i]['id'],
-                                                                          exim_q.queue[i]['from'],
-                                                                          exim_q.queue[i]['mailto'],
-                                                                          exim_q.queue[i]['time']
+            line = str(message_line_number + 1) + " {0} from <{1}> to {2}, {3} ago.".format(exim_q.queue[message_line_number]['id'],
+                                                                          exim_q.queue[message_line_number]['from'],
+                                                                          exim_q.queue[message_line_number]['mailto'],
+                                                                          exim_q.queue[message_line_number]['time'],
                                                                           )
             if exim_q.column_shift >= len(line):
                 exim_q.column_shift = len(line) - 1
             max_col = cur_screen.MAX_BOX_COLS + exim_q.column_shift
-            if i == exim_q.selected_message:
+            if message_line_number == exim_q.selected_message:
                 cur_screen.box_string(line[exim_q.column_shift:max_col], 2, cur_screen.highlight_text)
             else:
                 cur_screen.box_string(line[:cur_screen.MAX_BOX_COLS], 2)
-            if i == exim_q.total_messages:
+            if message_line_number == exim_q.total_messages:
                 break
 
 
@@ -263,6 +268,7 @@ def main(screen):
 
     cur_screen = CursesScreen(screen)
 
+    cur_screen.screen.addstr(2, 2, "Total messages in queue: {0}".format(exim_q.total_messages))
     display_queue(cur_screen, exim_q)
     display_help(cur_screen)
     cur_screen.refresh()
@@ -271,18 +277,23 @@ def main(screen):
     key = screen.getch()
     while key not in EXIT_KEY:
         # extract 1, because of the border line
-        current_line = exim_q.selected_message - exim_q.top_line - 1
+        current_line = exim_q.selected_message - exim_q.top_line
         if key == curses.KEY_RESIZE:
             cur_screen.redraw()
             display_help(cur_screen)
         elif key in ENTER_KEY:
             contents_screen(cur_screen, exim_q, 'content')
-        elif (key in DOWN_KEY) and not (exim_q.selected_message >= exim_q.total_messages):
+        elif (key in DOWN_KEY) and exim_q.selected_message < exim_q.total_messages:
             exim_q.selected_message += 1
             exim_q.column_shift = 0
-            if current_line == cur_screen.MAX_BOX_ROW:
+            if current_line == cur_screen.MAX_BOX_ROW - 1:
                 exim_q.top_line += 1
-        elif (key in UP_KEY) and not (exim_q.selected_message == 0):
+        elif key in END_KEY:
+            exim_q.selected_message = exim_q.total_messages
+            exim_q.column_shift = 0
+            if exim_q.total_messages > cur_screen.MAX_BOX_ROW:
+                exim_q.top_line = exim_q.total_messages - cur_screen.MAX_BOX_ROW + 1
+        elif (key in UP_KEY) and exim_q.selected_message > 0:
             exim_q.selected_message -= 1
             exim_q.column_shift = 0
             if current_line == 0:
@@ -291,6 +302,8 @@ def main(screen):
             exim_q.column_shift -= 1
         elif key in RIGHT_KEY:
             exim_q.column_shift += 1
+        elif key in HOME_KEY:
+            exim_q.column_shift = 0
         elif key in REFRESH_KEY:
             exim_q.read_queue()
         elif key in DELETE_KEY:
