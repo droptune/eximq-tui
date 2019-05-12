@@ -20,6 +20,8 @@ UP_KEY = (curses.KEY_UP, ord('k'), ord('K'))
 DOWN_KEY = (curses.KEY_DOWN, ord('j'), ord('J'))
 LEFT_KEY = (curses.KEY_LEFT, ord('h'), ord('H'))
 RIGHT_KEY = (curses.KEY_RIGHT, ord('l'), ord('L'))
+NEXT_KEY = (ord('n'), ord('N'))
+PREV_KEY = (ord('p'), ord('P'))
 DELIVER_KEY = (ord('d'), ord('D'))
 DELETE_KEY = (ord('x'), ord('X'))
 VIEW_LOG_KEY = (ord('g'), ord('G'))
@@ -61,7 +63,7 @@ class CursesScreen:
         self.screen.refresh()
         self.box.refresh()
 
-    def clear_box(self):
+    def box_clear(self):
         self.current_line = 1
         self.box.erase()
         self.box.box()
@@ -120,7 +122,7 @@ class EximQueue:
                         'from': line_result.group(4)
                     }
                     if re_frozen_check.search(line):
-                        current_message['status'] = '*frozen*'
+                        current_message['status'] = '*frozen* '
                     else:
                         current_message['status'] = ''
                     continue
@@ -138,23 +140,29 @@ class EximQueue:
     def get_selected_msg_id(self):
         return self.queue[self.selected_message]['id']
 
+    def get_selected_msg_info(self):
+        return self.get_message_info(self.selected_message)
+
+    def get_message_info(self, msg_number):
+        return {
+            'id': self.queue[msg_number]['id'],
+            'from': self.queue[msg_number]['from'],
+            'mailto': self.queue[msg_number]['mailto'],
+            'time': self.queue[msg_number]['time'],
+            'status': self.queue[msg_number]['status']
+        }
+
 
 def get_content(exim_q, mode, cur_screen):
-    cur_screen.clear_box()
+    cur_screen.box_clear()
     cur_screen.box_string("", 2, None, 2)
     cur_screen.box_refresh()
     msg_id = exim_q.get_selected_msg_id()
     try:
         if mode == 'content':
             content = subprocess.check_output("exim -Mvc {0}".format(msg_id), shell=True).decode('utf-8').splitlines()
-            current_message = exim_q.selected_message
-            header = "** Message {0} {4} from <{1}> to {2}, {3} ago. **".format(
-                exim_q.queue[current_message]['id'],
-                exim_q.queue[current_message]['from'],
-                exim_q.queue[current_message]['mailto'],
-                exim_q.queue[current_message]['time'],
-                exim_q.queue[current_message]['status'],
-            )
+            header = "** Message {from} {status}from <{from}> to {mailto}, {time} ago. **".format(
+                **exim_q.get_selected_msg_info())
             content.insert(0, header)
             return content
         if mode == 'log':
@@ -172,7 +180,7 @@ def contents_screen(cur_screen, exim_q, mode):
     content = get_content(exim_q, mode, cur_screen)
     max_line_len = len(max(content, key=len))
 
-    display_content(content, cur_screen, top_line, col_shift, exim_q)
+    display_content(content, cur_screen, top_line, col_shift)
 
     key = cur_screen.screen.getch()
     while key not in EXIT_KEY:
@@ -187,13 +195,21 @@ def contents_screen(cur_screen, exim_q, mode):
         elif key in LEFT_KEY and col_shift > 0:
             col_shift -= 1
         elif key in HOME_KEY:
-            col_shift = 0
-        elif key in UP_KEY and exim_q.selected_message > 0:
+            top_line, col_shift = 0, 0
+        elif (key in PREV_KEY) and exim_q.selected_message > 0:
             exim_q.selected_message -= 1
+            top_line, col_shift = 0, 0
             content = get_content(exim_q, mode, cur_screen)
-        elif key in DOWN_KEY and exim_q.selected_message < exim_q.total_messages:
+        elif (key in NEXT_KEY) and exim_q.selected_message < exim_q.total_messages:
             exim_q.selected_message += 1
+            top_line, col_shift = 0, 0
             content = get_content(exim_q, mode, cur_screen)
+        elif key in UP_KEY:
+            # TODO
+            pass
+        elif key in DOWN_KEY:
+            # TODO
+            pass
         elif key in VIEW_LOG_KEY and mode != 'log':
             mode = 'log'
             content = get_content(exim_q, mode, cur_screen)
@@ -204,6 +220,8 @@ def contents_screen(cur_screen, exim_q, mode):
             content = get_content(exim_q, mode, cur_screen)
         if key == curses.KEY_RESIZE:
             cur_screen.redraw()
+            max_col = cur_screen.MAX_BOX_COLS
+            top_line, col_shift = 0, 0
             display_help(cur_screen)
             cur_screen.refresh()
         else:
@@ -211,12 +229,13 @@ def contents_screen(cur_screen, exim_q, mode):
             continue
 
         if content is not None:
-            display_content(content, cur_screen, top_line, col_shift, exim_q)
+            display_content(content, cur_screen, top_line, col_shift)
+
         key = cur_screen.screen.getch()
 
 
-def display_content(content, cur_screen, top_line, col_shift, exim_q):
-    cur_screen.clear_box()
+def display_content(content, cur_screen, top_line, col_shift):
+    cur_screen.box_clear()
     max_row = cur_screen.MAX_BOX_ROW + top_line
     max_col = cur_screen.MAX_BOX_COLS + col_shift
 
@@ -228,7 +247,7 @@ def display_content(content, cur_screen, top_line, col_shift, exim_q):
 
 def delete_message(cur_screen, exim_q):
     msg_id = exim_q.get_selected_msg_id()
-    cur_screen.clear_box()
+    cur_screen.box_clear()
     cur_screen.box_string("Deleting message {0}...".format(msg_id), 2)
     cur_screen.box_string("...", 2)
     cur_screen.box_refresh()
@@ -239,7 +258,7 @@ def delete_message(cur_screen, exim_q):
 
 def deliver_message(cur_screen, exim_q):
     msg_id = exim_q.get_selected_msg_id()
-    cur_screen.clear_box()
+    cur_screen.box_clear()
     cur_screen.box_string("Attempting to deliver message {0}...".format(msg_id), 2)
     cur_screen.box_string("...", 2)
     cur_screen.box_refresh()
@@ -254,13 +273,9 @@ def display_queue(cur_screen, exim_q):
         if exim_q.total_messages == 0:
             cur_screen.box_string("No messages in queue.", 2)
         else:
-            line = str(message_line_number + 1) + " {0} {4} from <{1}> to {2}, {3} ago.".format(
-                exim_q.queue[message_line_number]['id'],
-                exim_q.queue[message_line_number]['from'],
-                exim_q.queue[message_line_number]['mailto'],
-                exim_q.queue[message_line_number]['time'],
-                exim_q.queue[message_line_number]['status'],
-            )
+            line = str(message_line_number + 1) + " {id} {status}from <{from}> to {mailto}, {time} ago.".format(
+                **exim_q.get_message_info(message_line_number))
+
             if exim_q.column_shift >= len(line):
                 exim_q.column_shift = len(line) - 1
             max_col = cur_screen.MAX_BOX_COLS + exim_q.column_shift
@@ -275,7 +290,7 @@ def display_queue(cur_screen, exim_q):
 def display_help(cur_screen):
     # Will be printed under the main box
     max_box_row = cur_screen.MAX_BOX_ROW
-    cur_screen.screen.addstr(max_box_row + 3, 2, "ENTER or M - view message")
+    cur_screen.screen.addstr(max_box_row + 3, 2, "ENTER or M - view message                 N/P - next/previous message")
     cur_screen.screen.addstr(max_box_row + 4, 2, "D - attempt to deliver message")
     cur_screen.screen.addstr(max_box_row + 5, 2, "X - delete message")
     cur_screen.screen.addstr(max_box_row + 6, 2, "G - grep exim log file for message ID")
@@ -296,14 +311,13 @@ def main(screen):
     # Enter main loop
     key = screen.getch()
     while key not in EXIT_KEY:
-        # extract 1, because of the border line
         current_line = exim_q.selected_message - exim_q.top_line
         if key == curses.KEY_RESIZE:
             cur_screen.redraw()
             display_help(cur_screen)
         elif key in ENTER_KEY:
             contents_screen(cur_screen, exim_q, 'content')
-        elif (key in DOWN_KEY) and exim_q.selected_message < exim_q.total_messages:
+        elif (key in DOWN_KEY or key in NEXT_KEY) and exim_q.selected_message < exim_q.total_messages:
             exim_q.selected_message += 1
             exim_q.column_shift = 0
             if current_line == cur_screen.MAX_BOX_ROW - 1:
@@ -313,7 +327,7 @@ def main(screen):
             exim_q.column_shift = 0
             if exim_q.total_messages > cur_screen.MAX_BOX_ROW:
                 exim_q.top_line = exim_q.total_messages - cur_screen.MAX_BOX_ROW + 1
-        elif (key in UP_KEY) and exim_q.selected_message > 0:
+        elif (key in UP_KEY or key in PREV_KEY) and exim_q.selected_message > 0:
             exim_q.selected_message -= 1
             exim_q.column_shift = 0
             if current_line == 0:
@@ -334,7 +348,7 @@ def main(screen):
             key = screen.getch()
             continue
 
-        cur_screen.clear_box()
+        cur_screen.box_clear()
 
         display_queue(cur_screen, exim_q)
         cur_screen.refresh()
