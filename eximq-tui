@@ -13,6 +13,8 @@ EXIM_LOG = None
 if EXIM_LOG is None:
     if system() == 'Linux':
         EXIM_LOG = "/var/log/exim/main.log"
+    elif system() == 'FreeBSD':
+        EXIM_LOG = "/var/log/exim/mainlog"
 
 # You may redefine controls here
 ENTER_KEY = (curses.KEY_ENTER, 10, 13, ord('m'), ord('M'))
@@ -272,6 +274,7 @@ def display_queue(cur_screen, exim_q):
         message_line_number = i + exim_q.top_line
         if exim_q.total_messages == 0:
             cur_screen.box_string("No messages in queue.", 2)
+            break
         else:
             line = str(message_line_number + 1) + " {id} {status}from <{from}> to {mailto}, {time} ago.".format(
                 **exim_q.get_message_info(message_line_number))
@@ -312,7 +315,13 @@ def main(screen):
     key = screen.getch()
     while key not in EXIT_KEY:
         current_line = exim_q.selected_message - exim_q.top_line
-        if key == curses.KEY_RESIZE:
+        if key in REFRESH_KEY:
+            exim_q.read_queue()
+        # Ignore other keys if there is no messages in queue
+        elif exim_q.total_messages == 0:
+            key = screen.getch()
+            continue
+        elif key == curses.KEY_RESIZE:
             cur_screen.redraw()
             display_help(cur_screen)
         elif key in ENTER_KEY:
@@ -340,8 +349,6 @@ def main(screen):
             exim_q.column_shift = 0
             exim_q.selected_message = 0
             exim_q.top_line = 0
-        elif key in REFRESH_KEY:
-            exim_q.read_queue()
         elif key in DELETE_KEY:
             delete_message(cur_screen, exim_q)
         elif key in DELIVER_KEY:
