@@ -133,7 +133,7 @@ class EximQueue:
                         queue.append(current_message)
 
         self.queue = queue
-        self.total_messages = len(queue) - 1
+        self.total_messages = len(queue)
         self.selected_message = 0
         self.top_line = 0
 
@@ -200,7 +200,7 @@ def contents_screen(cur_screen, exim_q, mode):
             exim_q.selected_message -= 1
             top_line, col_shift = 0, 0
             content = get_content(exim_q, mode, cur_screen)
-        elif (key in NEXT_KEY) and exim_q.selected_message < exim_q.total_messages:
+        elif (key in NEXT_KEY) and exim_q.selected_message < exim_q.total_messages - 1:
             exim_q.selected_message += 1
             top_line, col_shift = 0, 0
             content = get_content(exim_q, mode, cur_screen)
@@ -283,7 +283,7 @@ def display_queue(cur_screen, exim_q):
                 cur_screen.box_string(line[exim_q.column_shift:max_col], 2, cur_screen.highlight_text)
             else:
                 cur_screen.box_string(line[:cur_screen.MAX_BOX_COLS], 2)
-            if message_line_number == exim_q.total_messages:
+            if message_line_number == exim_q.total_messages - 1:
                 break
 
 
@@ -317,16 +317,16 @@ def main(screen):
             display_help(cur_screen)
         elif key in ENTER_KEY:
             contents_screen(cur_screen, exim_q, 'content')
-        elif (key in DOWN_KEY or key in NEXT_KEY) and exim_q.selected_message < exim_q.total_messages:
+        elif (key in DOWN_KEY or key in NEXT_KEY) and exim_q.selected_message < exim_q.total_messages - 1:
             exim_q.selected_message += 1
             exim_q.column_shift = 0
             if current_line == cur_screen.MAX_BOX_ROW - 1:
                 exim_q.top_line += 1
         elif key in END_KEY:
-            exim_q.selected_message = exim_q.total_messages
+            exim_q.selected_message = exim_q.total_messages - 1
             exim_q.column_shift = 0
             if exim_q.total_messages > cur_screen.MAX_BOX_ROW:
-                exim_q.top_line = exim_q.total_messages - cur_screen.MAX_BOX_ROW + 1
+                exim_q.top_line = exim_q.total_messages - cur_screen.MAX_BOX_ROW
         elif (key in UP_KEY or key in PREV_KEY) and exim_q.selected_message > 0:
             exim_q.selected_message -= 1
             exim_q.column_shift = 0
@@ -336,8 +336,10 @@ def main(screen):
             exim_q.column_shift -= 1
         elif key in RIGHT_KEY:
             exim_q.column_shift += 1
-        elif key in HOME_KEY:
+        elif key in HOME_KEY and not exim_q.selected_message == 0:
             exim_q.column_shift = 0
+            exim_q.selected_message = 0
+            exim_q.top_line = 0
         elif key in REFRESH_KEY:
             exim_q.read_queue()
         elif key in DELETE_KEY:

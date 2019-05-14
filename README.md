@@ -4,7 +4,7 @@ Exim queue TUI manager written in Python.
 This is a ncurses-based text UI frontend for Exim MTA queue management.
 
 ## Installation
-Python 2.6 or Python 3.0 or newer required.
+Python 2.6/Python 3.0 or newer required.
 
 Just copy [eximq-tui](https://raw.githubusercontent.com/droptune/eximq-tui/master/eximq-tui) somewhere in your PATH and launch it.
 
