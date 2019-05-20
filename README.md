@@ -10,4 +10,4 @@ Just copy [eximq-tui](https://raw.githubusercontent.com/droptune/eximq-tui/maste
 
 If your Exim puts log files in non-default folder you may need to put main log location in `EXIM_LOG` variable. It is used for *'grep exim log file for message ID'* function.
 
-![screenshot](https://user-images.githubusercontent.com/2103126/57552125-8ddcc580-7373-11e9-9154-477bc6680751.png)
+![screenshot](https://user-images.githubusercontent.com/2103126/58049914-a65c9500-7b56-11e9-9793-23de5c29dd6b.png)
