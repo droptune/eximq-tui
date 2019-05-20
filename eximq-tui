@@ -202,10 +202,12 @@ def contents_screen(cur_screen, exim_q, mode):
             exim_q.selected_message -= 1
             top_line, col_shift = 0, 0
             content = get_content(exim_q, mode, cur_screen)
-        elif (key in NEXT_KEY) and exim_q.selected_message < exim_q.total_messages - 1:
+            max_line_len = len(max(content, key=len))
+        elif (key in NEXT_KEY) and exim_q.selected_message < exim_q.total_messages - 2:
             exim_q.selected_message += 1
             top_line, col_shift = 0, 0
             content = get_content(exim_q, mode, cur_screen)
+            max_line_len = len(max(content, key=len))
         elif key in UP_KEY:
             # TODO
             pass
@@ -215,11 +217,14 @@ def contents_screen(cur_screen, exim_q, mode):
         elif key in VIEW_LOG_KEY and mode != 'log':
             mode = 'log'
             content = get_content(exim_q, mode, cur_screen)
+            max_line_len = len(max(content, key=len))
         elif key in ENTER_KEY and mode != 'content':
             mode = 'content'
             content = get_content(exim_q, mode, cur_screen)
+            max_line_len = len(max(content, key=len))
         elif key in REFRESH_KEY:
             content = get_content(exim_q, mode, cur_screen)
+            max_line_len = len(max(content, key=len))
         if key == curses.KEY_RESIZE:
             cur_screen.redraw()
             max_col = cur_screen.MAX_BOX_COLS
