@@ -117,6 +117,9 @@ class EximQueue:
             if line != '':
                 line_result = re_msg_info.match(line)
                 if line_result:
+                    if current_message:
+                        queue.append(current_message)
+                        current_message = {}
                     current_message = {
                         'time': line_result.group(1),
                         'size': line_result.group(2),
@@ -132,7 +135,9 @@ class EximQueue:
                     line_result = re_receipient.match(line)
                     if line_result:
                         current_message['mailto'] = line_result.group(1)
-                        queue.append(current_message)
+
+        if current_message:
+            queue.append(current_message)
 
         self.queue = queue
         self.total_messages = len(queue)
@@ -151,7 +156,9 @@ class EximQueue:
             'from': self.queue[msg_number]['from'],
             'mailto': self.queue[msg_number]['mailto'],
             'time': self.queue[msg_number]['time'],
-            'status': self.queue[msg_number]['status']
+            'status': self.queue[msg_number]['status'],
+            'number': msg_number + 1,
+            'total_number': self.total_messages
         }
 
 
@@ -163,7 +170,7 @@ def get_content(exim_q, mode, cur_screen):
     try:
         if mode == 'content':
             content = subprocess.check_output("exim -Mvc {0}".format(msg_id), shell=True).decode('utf-8').splitlines()
-            header = "** Message {from} {status}from <{from}> to {mailto}, {time} ago. **".format(
+            header = "** Message #{number} of {total_number} {from} {status}from <{from}> to {mailto}, {time} ago. **".format(
                 **exim_q.get_selected_msg_info())
             content.insert(0, header)
             return content
@@ -203,7 +210,7 @@ def contents_screen(cur_screen, exim_q, mode):
             top_line, col_shift = 0, 0
             content = get_content(exim_q, mode, cur_screen)
             max_line_len = len(max(content, key=len))
-        elif (key in NEXT_KEY) and exim_q.selected_message < exim_q.total_messages - 2:
+        elif (key in NEXT_KEY) and exim_q.selected_message < exim_q.total_messages - 1:
             exim_q.selected_message += 1
             top_line, col_shift = 0, 0
             content = get_content(exim_q, mode, cur_screen)
@@ -225,7 +232,7 @@ def contents_screen(cur_screen, exim_q, mode):
         elif key in REFRESH_KEY:
             content = get_content(exim_q, mode, cur_screen)
             max_line_len = len(max(content, key=len))
-        if key == curses.KEY_RESIZE:
+        elif key == curses.KEY_RESIZE:
             cur_screen.redraw()
             max_col = cur_screen.MAX_BOX_COLS
             top_line, col_shift = 0, 0
@@ -281,7 +288,7 @@ def display_queue(cur_screen, exim_q):
             cur_screen.box_string("No messages in queue.", 2)
             break
         else:
-            line = str(message_line_number + 1) + " {id} {status}from <{from}> to {mailto}, {time} ago.".format(
+            line = "{number} {id} {status}from <{from}> to {mailto}, {time} ago.".format(
                 **exim_q.get_message_info(message_line_number))
 
             if exim_q.column_shift >= len(line):
@@ -331,6 +338,8 @@ def main(screen):
             display_help(cur_screen)
         elif key in ENTER_KEY:
             contents_screen(cur_screen, exim_q, 'content')
+        elif key in VIEW_LOG_KEY:
+            contents_screen(cur_screen, exim_q, 'log')
         elif (key in DOWN_KEY or key in NEXT_KEY) and exim_q.selected_message < exim_q.total_messages - 1:
             exim_q.selected_message += 1
             exim_q.column_shift = 0
