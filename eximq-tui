@@ -40,7 +40,8 @@ EXIT_KEY = (27, ord('q'), ord('Q'))
 
 re_msg_info = re.compile(r"\s*(\S+)\s+(.+)\s+(.+)\s+<(.*)>")
 re_frozen_check = re.compile(r"\*\*\* frozen \*\*\*")
-re_receipient = re.compile(r"^\s+(\S+)\s*$")
+re_receipient = re.compile(r"^\s+D?\s(\S+)\s*$")
+re_is_delivered = re.compile(r"^\s+D\s\S+")
 
 
 class CursesScreen:
@@ -129,7 +130,8 @@ class EximQueue:
                         'time': line_result.group(1),
                         'size': line_result.group(2),
                         'id': line_result.group(3),
-                        'from': line_result.group(4)
+                        'from': line_result.group(4),
+                        'mailto': [],
                     }
                     if re_frozen_check.search(line):
                         current_message['status'] = '*frozen* '
@@ -138,8 +140,9 @@ class EximQueue:
                     continue
                 else:
                     line_result = re_receipient.match(line)
+                    is_delivered = 'delivered' if re_is_delivered.match(line) else 'NOT DELIVERED'
                     if line_result:
-                        current_message['mailto'] = line_result.group(1)
+                        current_message['mailto'].append([line_result.group(1), is_delivered])
 
         if current_message:
             queue.append(current_message)
@@ -159,12 +162,15 @@ class EximQueue:
         return {
             'id': self.queue[msg_number]['id'],
             'from': self.queue[msg_number]['from'],
-            'mailto': self.queue[msg_number]['mailto'],
+            'mailto': self.queue[msg_number]['mailto'][0][0],
             'time': self.queue[msg_number]['time'],
             'status': self.queue[msg_number]['status'],
             'number': msg_number + 1,
             'total_number': self.total_messages
         }
+
+    def get_selected_msg_mailto(self):
+        return self.queue[self.selected_message]['mailto']
 
 
 def get_content(exim_q, mode, cur_screen):
@@ -174,10 +180,19 @@ def get_content(exim_q, mode, cur_screen):
     msg_id = exim_q.get_selected_msg_id()
     try:
         if mode == 'content':
-            content = subprocess.check_output("exim -Mvc {0}".format(msg_id), shell=True).decode('utf-8').splitlines()
-            header = "** Message #{number} of {total_number} {from} {status}from <{from}> to {mailto}, {time} ago. **".format(
-                **exim_q.get_selected_msg_info())
-            content.insert(0, header)
+            message = subprocess.check_output("exim -Mvc {0}".format(msg_id), shell=True).decode('utf-8').splitlines()
+            if message:
+                header = "** Message #{number} of {total_number} {status}from <{from}>, {time} ago. **".format(
+                    **exim_q.get_selected_msg_info())
+                mail_to_list = [
+                    '\t{0} - {1}'.format(address[0], address[1]) for address in exim_q.get_selected_msg_mailto()
+                ]
+                content = [header, '', 'message to:']
+                content.extend(mail_to_list)
+                content.append('')
+                content.extend(message)
+            else:
+                content = "Message not found"
             return content
         if mode == 'log':
             return subprocess.check_output("grep -w {0} {1}".format(msg_id, EXIM_LOG), shell=True).decode('utf-8')\
@@ -222,9 +237,9 @@ def contents_screen(cur_screen, exim_q, mode):
             content = get_content(exim_q, mode, cur_screen)
             max_line_len = len(max(content, key=len))
         elif key in UP_KEY and top_line > 0:
-            top_line -=1
+            top_line -= 1
         elif key in DOWN_KEY and top_line < max_top_line:
-            top_line +=1
+            top_line += 1
         elif key in VIEW_LOG_KEY and mode != 'log':
             mode = 'log'
             content = get_content(exim_q, mode, cur_screen)
@@ -298,11 +313,14 @@ def display_queue(cur_screen, exim_q):
 
             if exim_q.column_shift >= len(line):
                 exim_q.column_shift = len(line) - 1
+
             max_col = cur_screen.MAX_BOX_COLS + exim_q.column_shift
+
             if message_line_number == exim_q.selected_message:
                 cur_screen.box_string(line[exim_q.column_shift:max_col], 2, cur_screen.highlight_text)
             else:
                 cur_screen.box_string(line[:cur_screen.MAX_BOX_COLS], 2)
+
             if message_line_number == exim_q.total_messages - 1:
                 break
 
@@ -310,7 +328,8 @@ def display_queue(cur_screen, exim_q):
 def display_help(cur_screen):
     # Will be printed under the main box
     max_box_row = cur_screen.MAX_BOX_ROW
-    cur_screen.screen.addstr(max_box_row + 3, 2, "ENTER or M - view message                 N/P - next/previous message")
+    cur_screen.screen.addstr(max_box_row + 3, 2,
+                             "ENTER or M - view message                 N/P - next/previous message")
     cur_screen.screen.addstr(max_box_row + 4, 2, "D - attempt to deliver message")
     cur_screen.screen.addstr(max_box_row + 5, 2, "X - delete message")
     cur_screen.screen.addstr(max_box_row + 6, 2, "G - grep exim log file for message ID")
