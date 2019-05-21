@@ -192,6 +192,7 @@ def contents_screen(cur_screen, exim_q, mode):
     col_shift = 0
 
     content = get_content(exim_q, mode, cur_screen)
+    max_top_line = len(content) - cur_screen.MAX_BOX_ROW
     max_line_len = len(max(content, key=len))
 
     display_content(content, cur_screen, top_line, col_shift)
@@ -220,12 +221,10 @@ def contents_screen(cur_screen, exim_q, mode):
             top_line, col_shift = 0, 0
             content = get_content(exim_q, mode, cur_screen)
             max_line_len = len(max(content, key=len))
-        elif key in UP_KEY:
-            # TODO
-            pass
-        elif key in DOWN_KEY:
-            # TODO
-            pass
+        elif key in UP_KEY and top_line > 0:
+            top_line -=1
+        elif key in DOWN_KEY and top_line < max_top_line:
+            top_line +=1
         elif key in VIEW_LOG_KEY and mode != 'log':
             mode = 'log'
             content = get_content(exim_q, mode, cur_screen)
@@ -240,6 +239,7 @@ def contents_screen(cur_screen, exim_q, mode):
         elif key == curses.KEY_RESIZE:
             cur_screen.redraw()
             max_col = cur_screen.MAX_BOX_COLS
+            max_top_line = len(content) - cur_screen.MAX_BOX_ROW
             top_line, col_shift = 0, 0
             display_help(cur_screen)
             cur_screen.refresh()
