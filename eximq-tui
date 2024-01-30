@@ -36,18 +36,21 @@ VIEW_LOG_KEY = (ord('g'), ord('G'))
 REFRESH_KEY = (ord('R'), ord('r'), curses.KEY_F5)
 HOME_KEY = (curses.KEY_HOME, )
 END_KEY = (curses.KEY_END, )
+F1_KEY = (curses.KEY_F1, )
 MULTIPLE_SELECT_KEY = (32)
 EXIT_KEY = (27, ord('q'), ord('Q'))
 
 re_msg_info = re.compile(r"\s*(\S+)\s+(.+)\s+(.+)\s+<(.*)>")
 re_frozen_check = re.compile(r"\*\*\* frozen \*\*\*")
-re_receipient = re.compile(r"^\s+D?\s(\S+)\s*$")
+re_recipient = re.compile(r"^\s+D?\s(\S+)\s*$")
 re_is_delivered = re.compile(r"^\s+D\s\S+")
 
 
 class CursesScreen:
     """Curses class"""
     current_line = 1
+    HELP_HEIGHT = 6
+    show_help = True
 
     def __init__(self, screen):
         self.screen = screen
@@ -56,14 +59,7 @@ class CursesScreen:
         self.highlight_text = curses.color_pair(1)
         self.normal_text = curses.A_NORMAL
 
-        self.screen.border(0)
-        curses.curs_set(0)
-        max_rows, max_cols = self.screen.getmaxyx()
-        self.MAX_BOX_ROW = max_rows - 10
-        self.MAX_BOX_COLS = max_cols - 6
-
-        self.box = curses.newwin(self.MAX_BOX_ROW + 2, self.MAX_BOX_COLS + 4, 1, 1)
-        self.box.box()
+        self.draw_box()
 
     def box_refresh(self):
         self.box.refresh()
@@ -87,10 +83,13 @@ class CursesScreen:
     def redraw(self):
         self.erase()
         self.refresh()
+        self.draw_box()
+
+    def draw_box(self):
         self.screen.border(0)
         curses.curs_set(0)
         max_rows, max_cols = self.screen.getmaxyx()
-        self.MAX_BOX_ROW = max_rows - 10
+        self.MAX_BOX_ROW = max_rows - 4 - (self.HELP_HEIGHT if self.show_help else 0)
         self.MAX_BOX_COLS = max_cols - 6
         self.box = curses.newwin(self.MAX_BOX_ROW + 2, self.MAX_BOX_COLS + 4, 1, 1)
         self.box.box()
@@ -103,6 +102,9 @@ class CursesScreen:
         self.box.addstr(y, x, text, color)
         self.current_line += 1
 
+    def toggle_help(self):
+        self.show_help = not self.show_help
+
 
 class EximQueue:
     column_shift = 0
@@ -110,6 +112,7 @@ class EximQueue:
     selected_message = 0
     total_messages = 0
     queue = []
+    display_help = True
 
     def __init__(self):
         self.read_queue()
@@ -140,7 +143,7 @@ class EximQueue:
                         current_message['status'] = ''
                     continue
                 else:
-                    line_result = re_receipient.match(line)
+                    line_result = re_recipient.match(line)
                     is_delivered = 'delivered' if re_is_delivered.match(line) else 'NOT DELIVERED'
                     if line_result:
                         current_message['mailto'].append([line_result.group(1), is_delivered])
@@ -257,8 +260,13 @@ def contents_screen(cur_screen, exim_q, mode):
             max_col = cur_screen.MAX_BOX_COLS
             max_top_line = len(content) - cur_screen.MAX_BOX_ROW
             top_line, col_shift = 0, 0
-            display_help(cur_screen)
+            if exim_q.display_help:
+                display_help(cur_screen)
             cur_screen.refresh()
+        elif key in F1_KEY:
+            exim_q.display_help = not exim_q.display_help
+            cur_screen.toggle_help()
+            cur_screen.redraw()
         else:
             key = cur_screen.screen.getch()
             continue
@@ -331,7 +339,8 @@ def display_help(cur_screen):
     max_box_row = cur_screen.MAX_BOX_ROW
     cur_screen.screen.addstr(max_box_row + 3, 2,
                              "ENTER or M - view message                 N/P - next/previous message")
-    cur_screen.screen.addstr(max_box_row + 4, 2, "D - attempt to deliver message")
+    cur_screen.screen.addstr(max_box_row + 4, 2,
+                             "D - attempt to deliver message            F1 - hide help")
     cur_screen.screen.addstr(max_box_row + 5, 2, "X - delete message")
     cur_screen.screen.addstr(max_box_row + 6, 2, "G - grep exim log file for message ID")
     cur_screen.screen.addstr(max_box_row + 7, 2, "R or F5 - refresh")
@@ -344,10 +353,12 @@ def main(screen):
         sys.exit(1)
 
     cur_screen = CursesScreen(screen)
+    exim_q = EximQueue()
 
     cur_screen.screen.addstr(2, 2, "Total messages in queue: {0}".format(exim_q.total_messages))
     display_queue(cur_screen, exim_q)
-    display_help(cur_screen)
+    if exim_q.display_help:
+        display_help(cur_screen)
     cur_screen.refresh()
 
     # Enter main loop
@@ -356,13 +367,18 @@ def main(screen):
         current_line = exim_q.selected_message - exim_q.top_line
         if key in REFRESH_KEY:
             exim_q.read_queue()
+        elif key in F1_KEY:
+            exim_q.display_help = not exim_q.display_help
+            cur_screen.toggle_help()
+            cur_screen.redraw()
         # Ignore other keys if there is no messages in queue
         elif exim_q.total_messages == 0:
             key = screen.getch()
             continue
         elif key == curses.KEY_RESIZE:
             cur_screen.redraw()
-            display_help(cur_screen)
+            if exim_q.display_help:
+                display_help(cur_screen)
         elif key in ENTER_KEY:
             contents_screen(cur_screen, exim_q, 'content')
         elif key in VIEW_LOG_KEY:
@@ -401,6 +417,8 @@ def main(screen):
         cur_screen.box_clear()
 
         display_queue(cur_screen, exim_q)
+        if exim_q.display_help:
+            display_help(cur_screen)
         cur_screen.refresh()
         key = screen.getch()
 
