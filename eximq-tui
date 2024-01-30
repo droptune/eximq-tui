@@ -5,12 +5,13 @@
 # https://github.com/droptune/eximq-tui
 #
 
+import curses
 import re
 import subprocess
 import sys
-import curses
 from curses import wrapper
 from platform import system
+from shutil import which
 
 EXIM_LOG = None
 
@@ -338,7 +339,9 @@ def display_help(cur_screen):
 
 
 def main(screen):
-    exim_q = EximQueue()
+    # Exit if exim binary is not found
+    if not which("exim"):
+        sys.exit(1)
 
     cur_screen = CursesScreen(screen)
 
