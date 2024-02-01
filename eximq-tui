@@ -196,13 +196,13 @@ def get_content(exim_q, mode, cur_screen):
                 content.append('')
                 content.extend(message)
             else:
-                content = "Message not found"
+                content = ["Message not found"]
             return content
         if mode == 'log':
             return subprocess.check_output("grep -w {0} {1}".format(msg_id, EXIM_LOG), shell=True).decode('utf-8')\
                 .splitlines()
     except:
-        return None
+        return ['Error']
 
 
 def contents_screen(cur_screen, exim_q, mode):
